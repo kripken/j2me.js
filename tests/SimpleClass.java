@@ -17,7 +17,7 @@ class SimpleClass {
   }
 
   public static void main(String[] args) {
-    System.out.println("I'm hungry");
+    System.out.println("Running...");
 
     int [] array = new int [1024];
 
@@ -25,17 +25,17 @@ class SimpleClass {
       array[i] = array.length - i;
     }
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 6; i++) {
       for (int j = 0; j < array.length; j++) {
         array[j] = array.length - j;
       }
       SimpleClass.bubbleSort(array, 0, array.length - 1);
     }
 
-    String s = "";
-    for (int i = 0; i < array.length; i++) {
-      s += array[i] + " ";
+    for (int i = 0; i < array.length-1; i++) {
+      if (array[i] > array[i+1]) System.out.println("BADDDDDDDDDDDD");
     }
-    System.out.println(s);
+
+    System.out.println("Done.");
   }
 }
