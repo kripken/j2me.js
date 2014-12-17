@@ -69,18 +69,18 @@ try {
        "classfile/accessflags.js", "instrument.js", "signature.js", "opcodes.js",
        "override.js", "native.js", "tests/override.js", 
        "string.js", "libs/console.js", "midp/midp.js",
-       "libs/long.js", "midp/crypto.js", "libs/forge/md5.js", "libs/forge/util.js", "build/compiled.js");
+       "libs/long.js", "midp/crypto.js", "libs/forge/md5.js", "libs/forge/util.js");//, "build/compiled.js");
 
   var dump = putstr;
   var console = window.console;
 
   CLASSES.addSourceDirectory("java/cldc1.1.1");
   CLASSES.addSourceDirectory("java/midp");
-  CLASSES.addSourceDirectory("bench/scimark2src");
+  //CLASSES.addSourceDirectory("bench/scimark2src");
 
   CLASSES.addPath("java/classes.jar", snarf("java/classes.jar", "binary").buffer);
   CLASSES.addPath("tests/tests.jar", snarf("tests/tests.jar", "binary").buffer);
-  CLASSES.addPath("bench/scimark2.jar", snarf("bench/scimark2.jar", "binary").buffer);
+  //CLASSES.addPath("bench/scimark2.jar", snarf("bench/scimark2.jar", "binary").buffer);
 
   CLASSES.initializeBuiltinClasses();
 
