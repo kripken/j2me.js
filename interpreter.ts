@@ -7,7 +7,7 @@ module J2ME {
   import Bytecodes = Bytecode.Bytecodes;
   import assert = Debug.assert;
 
-  export var interpreterCounter = null; // new Metrics.Counter(true);
+  export var interpreterCounter = null;//new Metrics.Counter(true);
 
   var traceArrayAccess = false;
 
@@ -194,7 +194,7 @@ module J2ME {
         }
       }
 
-      interpreterCounter && interpreterCounter.count("OP " + frame.methodInfo.implKey + " ");
+      interpreterCounter && interpreterCounter.count("OP " + op + " ");
 
 
       // console.trace(ctx.thread.pid, frame.methodInfo.classInfo.className + " " + frame.methodInfo.name + " " + (frame.bci - 1) + " " + OPCODES[op] + " " + stack.join(","));

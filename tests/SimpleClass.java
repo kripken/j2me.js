@@ -25,7 +25,7 @@ class SimpleClass {
       array[i] = array.length - i;
     }
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 2; i++) {
       for (int j = 0; j < array.length; j++) {
         array[j] = array.length - j;
       }
