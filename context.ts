@@ -45,23 +45,20 @@ module J2ME {
       return this.read8() << 8 | this.read8();
     }
 
-    read32(): number {
+    read32signed(): number {
       return this.read16() << 16 | this.read16();
     }
 
     read8signed(): number {
-      var x = this.read8();
-      return (x > 0x7f) ? (x - 0x100) : x;
+      return this.read8() << 24 >> 24;
     }
 
     read16signed(): number {
-      var x = this.read16();
-      return (x > 0x7fff) ? (x - 0x10000) : x;
+      return this.read16() << 16 >> 16;
     }
 
-    read32signed(): number {
-      var x = this.read32();
-      return (x > 0x7fffffff) ? (x - 0x100000000) : x;
+    read32(): number {
+      return this.read32() >>> 0;
     }
 
     /**
