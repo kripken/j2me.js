@@ -129,9 +129,90 @@ if (urlParams.jad) {
     .split("\n")
     .forEach(function(entry) {
       if (entry) {
-        var keyval = entry.split(':');
-        MIDP.manifest[keyval[0]] = keyval[1].trim();
+        var keyEnd = entry.indexOf(":");
+        var key = entry.substring(0, keyEnd);
+        var val = entry.substring(keyEnd + 1).trim();
+        MIDP.manifest[key] = val;
       }
+    });
+  }));
+}
+
+function performDownload(dialog, callback) {
+  var dialogText = dialog.querySelector('h1.download-dialog-text');
+  dialogText.textContent = "Downloading " + MIDlet.name + "…";
+
+  var progressBar = dialog.querySelector('progress.pack-activity');
+
+  var sender = DumbPipe.open("JARDownloader", {}, function(message) {
+    switch (message.type) {
+      case "done":
+        DumbPipe.close(sender);
+
+        callback(message.data);
+
+        break;
+
+      case "progress":
+        progressBar.value = message.progress;
+        break;
+
+      case "fail":
+        DumbPipe.close(sender);
+
+        progressBar.value = 0;
+        progressBar.style.display = "none";
+
+        var dialogText = dialog.querySelector('h1.download-dialog-text');
+        dialogText.textContent = "Download failure";
+
+        var btnRetry = dialog.querySelector('button.recommend');
+        btnRetry.style.display = '';
+
+        btnRetry.addEventListener('click', function onclick(e) {
+          e.preventDefault();
+          btnRetry.removeEventListener('click', onclick);
+
+          btnRetry.style.display = "none";
+
+          progressBar.style.display = '';
+
+          performDownload(dialog, callback);
+        });
+
+        break;
+    }
+  });
+}
+
+if (urlParams.downloadJAD) {
+  loadingPromises.push(new Promise(function(resolve, reject) {
+    initFS.then(function() {
+      fs.exists("/app.jar", function(exists) {
+        if (exists) {
+          fs.open("/app.jar", function(fd) {
+            var data = fs.read(fd);
+            fs.close();
+            jvm.addPath("app.jar", data.buffer);
+            resolve();
+          });
+        } else {
+          var dialog = document.getElementById('download-progress-dialog').cloneNode(true);
+          dialog.style.display = 'block';
+          dialog.classList.add('visible');
+          document.body.appendChild(dialog);
+
+          performDownload(dialog, function(data) {
+            dialog.parentElement.removeChild(dialog);
+
+            jvm.addPath("app.jar", data);
+
+            fs.create("/app.jar", new Blob([ data ]), function() {});
+
+            resolve();
+          });
+        }
+      });
     });
   }));
 }
@@ -171,8 +252,25 @@ window.onload = function() {
    J2ME.interpreterCounter.clear();
  };
  document.getElementById("dumpCounters").onclick = function() {
-   J2ME.interpreterCounter.traceSorted(new J2ME.IndentingWriter());
+   if (J2ME.interpreterCounter) {
+     J2ME.interpreterCounter.traceSorted(new J2ME.IndentingWriter());
+   }
+   if (nativeCounter) {
+     nativeCounter.traceSorted(new J2ME.IndentingWriter());
+   }
  };
+  document.getElementById("dumpCountersTime").onclick = function() {
+    J2ME.interpreterCounter && J2ME.interpreterCounter.clear();
+    nativeCounter && nativeCounter.clear();
+    setTimeout(function () {
+      if (J2ME.interpreterCounter) {
+        J2ME.interpreterCounter.traceSorted(new J2ME.IndentingWriter());
+      }
+      if (nativeCounter) {
+        nativeCounter.traceSorted(new J2ME.IndentingWriter());
+      }
+    }, 1000);
+  };
  document.getElementById("profile").onclick = function() {
    if (getIsOff(this)) {
      Instrument.startProfile();
@@ -189,3 +287,111 @@ window.onload = function() {
 if (urlParams.profile && !/no|0/.test(urlParams.profile)) {
   Instrument.startProfile();
 }
+
+function requestTimelineBuffers(fn) {
+  if (J2ME.timeline) {
+    fn([J2ME.timeline]);
+    return;
+  }
+  return fn([]);
+}
+
+var profiler = (function() {
+
+  var elProfilerContainer = document.getElementById("profilerContainer");
+  var elProfilerToolbar = document.getElementById("profilerToolbar");
+  var elProfilerMessage = document.getElementById("profilerMessage");
+  var elProfilerPanel = document.getElementById("profilePanel");
+  var elBtnMinimize = document.getElementById("profilerMinimizeButton");
+  var elBtnStartStop = document.getElementById("profilerStartStop");
+
+  var controller;
+  var startTime;
+  var timerHandle;
+  var timeoutHandle;
+
+  var Profiler = function() {
+    controller = new Shumway.Tools.Profiler.Controller(elProfilerPanel);
+    elBtnStartStop.addEventListener("click", this._onStartStopClick.bind(this));
+
+    var self = this;
+    window.addEventListener("keypress", function (event) {
+      if (event.altKey && event.keyCode === 114) { // Alt + R
+        self._onStartStopClick();
+      }
+    }, false);
+  }
+
+  Profiler.prototype.start = function(maxTime, resetTimelines) {
+    window.profile = true;
+    requestTimelineBuffers(function (buffers) {
+      for (var i = 0; i < buffers.length; i++) {
+        buffers[i].reset();
+      }
+    });
+    controller.deactivateProfile();
+    maxTime = maxTime || 0;
+    elProfilerToolbar.classList.add("withEmphasis");
+    elBtnStartStop.textContent = "Stop";
+    startTime = Date.now();
+    timerHandle = setInterval(showTimeMessage, 1000);
+    if (maxTime) {
+      timeoutHandle = setTimeout(this.createProfile.bind(this), 5000);
+    }
+    showTimeMessage();
+  }
+
+  Profiler.prototype.createProfile = function() {
+    requestTimelineBuffers(function (buffers) {
+      controller.createProfile(buffers);
+      elProfilerToolbar.classList.remove("withEmphasis");
+      elBtnStartStop.textContent = "Start";
+      clearInterval(timerHandle);
+      clearTimeout(timeoutHandle);
+      timerHandle = 0;
+      timeoutHandle = 0;
+      window.profile = false;
+      showTimeMessage(false);
+    });
+  }
+
+  Profiler.prototype.openPanel = function() {
+    elProfilerContainer.classList.remove("collapsed");
+  }
+
+  Profiler.prototype.closePanel = function() {
+    elProfilerContainer.classList.add("collapsed");
+  }
+
+  Profiler.prototype.resize = function() {
+    controller.resize();
+  }
+
+  Profiler.prototype._onMinimizeClick = function(e) {
+    if (elProfilerContainer.classList.contains("collapsed")) {
+      this.openPanel();
+    } else {
+      this.closePanel();
+    }
+  }
+
+  Profiler.prototype._onStartStopClick = function(e) {
+    if (timerHandle) {
+      this.createProfile();
+      this.openPanel();
+    } else {
+      this.start(0, true);
+    }
+  }
+
+  function showTimeMessage(show) {
+    show = typeof show === "undefined" ? true : show;
+    var time = Math.round((Date.now() - startTime) / 1000);
+    elProfilerMessage.textContent = show ? "Running: " + time + " Seconds" : "";
+  }
+
+  return new Profiler();
+
+})();
+
+profiler.start(3000, false);

@@ -20,6 +20,11 @@ module J2ME {
     traceWriter.writeLn(toDebugString(array) + "[" + idx + "] (" + toDebugString(array[idx]) + ")");
   }
 
+  /**
+   * The number of opcodes executed thus far.
+   */
+  export var ops = 0;
+
   export function interpret(ctx: Context) {
     var frame = ctx.current();
 
@@ -33,8 +38,8 @@ module J2ME {
       if (frame.lockObject)
         ctx.monitorExit(frame.lockObject);
       var callee = frame;
-      frame = ctx.popFrame();
-      var caller = ctx.current();
+      ctx.frames.pop();
+      var caller = frame = ctx.frames.length === 0 ? null : ctx.current();
       Instrument.callExitHooks(callee.methodInfo, caller, callee);
       if (frame === null) {
         returnValue = null;
@@ -178,6 +183,7 @@ module J2ME {
     var lastSourceLocation;
 
     while (true) {
+      ops ++
       var op: Bytecodes = frame.read8();
       if (traceBytecodes) {
         if (traceSourceLocation) {

@@ -12,10 +12,26 @@ module J2ME {
   declare var Native, Override;
   declare var VM;
   declare var Long;
-  declare var Instrument;
+
   export var traceWriter = null;
   export var linkWriter = null;
   export var initWriter = null;
+
+  declare var Shumway;
+
+  export var timeline;
+
+  if (typeof Shumway !== "undefined") {
+    timeline = new Shumway.Tools.Profiler.TimelineBuffer("Runtime");
+  }
+
+  export function enterTimeline(name: string, data?: any) {
+    timeline && timeline.enter(name, data);
+  }
+
+  export function leaveTimeline(name?: string, data?: any) {
+    timeline && timeline.leave(name, data);
+  }
 
   export var Klasses = {
     java: {
@@ -100,7 +116,8 @@ module J2ME {
 
   export var phase = ExecutionPhase.Runtime;
 
-  declare var internedStrings: Map<string, java.lang.String>;
+  export var internedStrings: Map<string, java.lang.String> = new Map<string, java.lang.String>();
+
   declare var util;
 
   import assert = J2ME.Debug.assert;
@@ -267,7 +284,7 @@ module J2ME {
       }
     }
 
-    newStringConstant(s): java.lang.String {
+    newStringConstant(s: string): java.lang.String {
       if (internedStrings.has(s)) {
         return internedStrings.get(s);
       }
@@ -654,6 +671,7 @@ module J2ME {
   }
 
   export function linkKlass(classInfo: ClassInfo) {
+    enterTimeline("linkKlass", {classInfo: classInfo});
     var mangledName = mangleClass(classInfo);
     var klass;
     classInfo.klass = klass = getKlass(classInfo);
@@ -681,6 +699,8 @@ module J2ME {
     linkWriter && linkWriter.writeLn("Link: " + classInfo.className + " -> " + klass);
 
     linkKlassMethods(classInfo.klass);
+    linkKlassFields(classInfo.klass);
+    leaveTimeline("linkKlass");
   }
 
   function findNativeMethodBinding(methodInfo: MethodInfo) {
@@ -736,7 +756,6 @@ module J2ME {
       }
       var caller = $.ctx.current();
       var callee = frame;
-      Instrument.callEnterHooks(methodInfo, caller, callee);
       if (methodInfo.isSynchronized) {
         if (!frame.lockObject) {
           frame.lockObject = methodInfo.isStatic
@@ -762,6 +781,30 @@ module J2ME {
     //  }
     //  return null;
     //}
+  }
+
+  /**
+   * Creates convenience getters / setters on Java objects.
+   */
+  function linkKlassFields(klass: Klass) {
+    var classInfo = klass.classInfo;
+    var fields = classInfo.fields;
+    var classBindings = Bindings[klass.classInfo.className];
+    if (classBindings && classBindings.fields) {
+      for (var i = 0; i < fields.length; i++) {
+        var field = fields[i];
+        var key = field.name + "." + field.signature;
+        var symbols = field.isStatic ? classBindings.fields.staticSymbols :
+                                       classBindings.fields.instanceSymbols;
+        if (symbols && symbols[key]) {
+          assert(!field.isStatic, "Static fields are not supported yet.");
+          var symbolName = symbols[key];
+          var object = field.isStatic ? klass : klass.prototype;
+          assert (!object.hasOwnProperty(symbolName), "Should not overwrite existing properties.");
+          ObjectUtilities.defineNonEnumerableForwardingProperty(object, symbolName, field.mangledName);
+        }
+      }
+    }
   }
 
   function linkKlassMethods(klass: Klass) {
@@ -792,7 +835,13 @@ module J2ME {
         }
       }
 
+      // Save method info on the function object so that we can figure out where we are
+      // bailing out from.
       fn.methodInfo = methodInfo;
+
+      if (timeline) {
+        fn = profilingWrapper(fn, methodInfo, methodType);
+      }
 
       if (traceWriter && methodType !== MethodType.Interpreted) {
         fn = tracingWrapper(fn, methodInfo, methodType);
@@ -806,6 +855,22 @@ module J2ME {
     }
 
     linkWriter && linkWriter.outdent();
+
+    function profilingWrapper(fn: Function, methodInfo: MethodInfo, methodType: MethodType) {
+      return function () {
+        var key = methodType !== MethodType.Interpreted ? MethodType[methodType] : methodInfo.implKey;
+        var s = ops;
+        try {
+          enterTimeline(key);
+          var r = fn.apply(this, arguments);
+          leaveTimeline(key, s !== ops ? { ops: ops - s } : undefined);
+        } catch (e) {
+          leaveTimeline(key, s !== ops ? { ops: ops - s } : undefined);
+          throw e;
+        }
+        return r;
+      };
+    }
 
     function tracingWrapper(fn: Function, methodInfo: MethodInfo, methodType: MethodType) {
       return function() {
@@ -894,19 +959,19 @@ module J2ME {
 
   export function checkCast(object: java.lang.Object, klass: Klass) {
     if (object !== null && !isAssignableTo(object.klass, klass)) {
-      throw new TypeError();
+      throw $.ctx.createException("java/lang/ClassCastException");
     }
   }
 
   export function checkCastKlass(object: java.lang.Object, klass: Klass) {
     if (object !== null && object.klass.display[klass.depth] !== klass) {
-      throw new TypeError();
+      throw $.ctx.createException("java/lang/ClassCastException");
     }
   }
 
   export function checkCastInterface(object: java.lang.Object, klass: Klass) {
     if (object !== null && object.klass.interfaces.indexOf(klass) < 0) {
-      throw new TypeError();
+      throw $.ctx.createException("java/lang/ClassCastException");
     }
   }
 
@@ -1046,7 +1111,9 @@ var $CCI = J2ME.checkCastInterface;
 
 var $AK = J2ME.getArrayKlass;
 var $NA = J2ME.newArray;
-var $S = J2ME.newString;
+var $S = function(str: string) {
+  return $.newStringConstant(str);
+};
 var $CDZ = J2ME.checkDivideByZero;
 
 var $ME = function monitorEnter(object: J2ME.java.lang.Object) {
