@@ -11,6 +11,12 @@ module J2ME {
     locals: any [];
     stack: any [];
     code: Uint8Array;
+    codeS: Int8Array;
+    codeLen: number;
+    code16: Uint16Array;
+    codeS16: Int16Array;
+    code32: Uint32Array;
+    codeS32: Int32Array;
     bci: number;
     cp: any;
     localsBase: number;
@@ -20,7 +26,24 @@ module J2ME {
     constructor(methodInfo: MethodInfo, locals: any [], localsBase: number) {
       this.methodInfo = methodInfo;
       this.cp = methodInfo.classInfo.constant_pool;
+
       this.code = methodInfo.code;
+      this.codeS = new Int8Array(this.code.buffer);
+      if (this.code.length & 3) { // make sure it is of a size we can construct larger views upon
+        // TODO: ArrayBuffer.transfer?
+        this.code = new Uint8Array((this.code.length + 4) & ~3);
+        this.code.set(methodInfo.code);
+      }
+      var len = this.codeLen = this.code.length;
+      var flipped = new Uint8Array(len);
+      for (var i = 0; i < len; i++) {
+        flipped[i] = this.code[len-i-1];
+      }
+      this.code16  = new Uint16Array(flipped.buffer);
+      this.codeS16 = new Int16Array(flipped.buffer);
+      this.code32  = new Uint32Array(flipped.buffer);
+      this.codeS32 = new Int32Array(flipped.buffer);
+
       this.bci = 0;
       this.stack = [];
       this.locals = locals;
@@ -42,26 +65,49 @@ module J2ME {
     }
 
     read16(): number {
-      return this.read8() << 8 | this.read8();
+      var flip = this.codeLen - this.bci - 2;
+      if (flip & 1) {
+        return this.read8() << 8 | this.read8();
+      }
+      var ret = this.code16[flip >> 1];
+      this.bci += 2;
+      return ret;
     }
 
     read32(): number {
-      return this.read16() << 16 | this.read16();
+      var flip = this.codeLen - this.bci - 4;
+      if (flip & 3) {
+        return this.read16() << 16 | this.read16();
+      }
+      var ret = this.code32[flip >> 2];
+      this.bci += 4;
+      return ret;
     }
 
     read8signed(): number {
-      var x = this.read8();
-      return (x > 0x7f) ? (x - 0x100) : x;
+      return this.codeS[this.bci++];
     }
 
     read16signed(): number {
-      var x = this.read16();
-      return (x > 0x7fff) ? (x - 0x10000) : x;
+      var flip = this.codeLen - this.bci - 2;
+      if (flip & 1) {
+        var x = this.read8() << 8 | this.read8();
+        return (x > 0x7fff) ? (x - 0x10000) : x;
+      }
+      var ret = this.codeS16[flip >> 1];
+      this.bci += 2;
+      return ret;
     }
 
     read32signed(): number {
-      var x = this.read32();
-      return (x > 0x7fffffff) ? (x - 0x100000000) : x;
+      var flip = this.codeLen - this.bci - 4;
+      if (flip & 3) {
+        var x = this.read16() << 16 | this.read16();
+        return (x > 0x7fffffff) ? (x - 0x100000000) : x;
+      }
+      var ret = this.codeS32[flip >> 2];
+      this.bci += 4;
+      return ret;
     }
 
     /**
